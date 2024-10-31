@@ -1,7 +1,7 @@
 #include <sys/types.h>
 
-void compute_checksum(unsigned char * ICMP_header, int size){
-    int i;
+void compute_checksum(unsigned char * ICMP_header, size_t size){
+    size_t i;
     u_int32_t checksum;
     // Set the checksum field in the header to 0
     ICMP_header[2] &= 0x0;
