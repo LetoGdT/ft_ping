@@ -1,5 +1,5 @@
 #include <unistd.h>
-#include <signal.h>e
+#include <signal.h>
 #include <arpa/nameser.h>
 #include <stdbool.h>
 #include <resolv.h>
@@ -98,8 +98,10 @@ int main(int argc, char** argv){
         // send echo request, with timestamp in data (ICMP type 8 code 0)
         alarm(1);
         // make blocking read on socket waiting for echo reply (ICMP type 0 code 0)
-        read(sockfd, &pkt, sizeof(pkt));
-        if (read )
+        if (read(sockfd, &pkt, sizeof(pkt)) == -1){
+            printf("%s: %s\n", argv[0], strerror(errno));
+            return 1;
+        }
         if (!alarm_occured) {
             update_stat(&stat, &pkt);
             // print info on received icmp packet
