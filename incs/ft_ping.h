@@ -1,17 +1,16 @@
 #ifndef FT_PING_H
 # define FT_PING_H
-# include <time.h>
 # include <sys/types.h>
 
 # define TIME_ERROR "Error when retrieving the time\n"
 
 struct __attribute__((packed)) s_icmp_pkt {
-    uint8_t     type;
-    uint8_t     code;
-    uint16_t    checksum;
-    uint16_t    id;
-    uint16_t    sequence;
-    time_t      timestamp;
+    uint8_t        type;
+    uint8_t        code;
+    uint16_t       checksum;
+    uint16_t       id;
+    uint16_t       sequence;
+    struct timeval timestamp;
 };
 
 struct s_icmp_stat {
@@ -20,12 +19,25 @@ struct s_icmp_stat {
     double sum_of_squared;
     double average;
     double mdev;
+    double min;
+    double max;
+};
+
+struct s_ft_ping {
+    uint16_t icmp_seq ;
+    char *addr;
+    int sockfd;
+    struct sockaddr_in serv_addr;
+    struct timeval start_time;
+    struct timeval end_time;
 };
 
 void compute_checksum(unsigned char * ICMP_header, size_t size);
-void fill_icmp_pkt(struct s_icmp_pkt *pkt, int icmp_seq);
+int fill_icmp_pkt(struct s_icmp_pkt *pkt, int icmp_seq);
 void sigkill_handler(int sig);
 void alarm_handler(int sig);
-void update_stat(struct s_icmp_stat *stat, struct s_icmp_pkt * const pkt);
+void initialize_stat(struct s_icmp_stat * stat);
+int update_and_print_single_stat(struct s_icmp_stat *stat, struct s_icmp_pkt * const pkt, struct s_ft_ping * ft);
+void print_stat(struct s_icmp_stat * stat, struct s_ft_ping const * ft);
 
 #endif

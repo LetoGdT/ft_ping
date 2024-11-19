@@ -1,21 +1,22 @@
 NAME		:=	ft_ping
-SRCS		:=	srcs/main.c
+SRCS		:=	srcs/main.c \
+				srcs/checksum.c
 
-HDRS		:=	
+HDRS		:=	incs/ft_ping.h
 
 OBJS		:=	$(addprefix objs/,$(notdir $(patsubst %.c,%.o,$(SRCS))))
 OBJS_BONUS	:=	$(addprefix objs/,$(notdir $(patsubst %.c,%.o,$(SRCS_BONUS))))
 
 CC			:=	gcc
-CFLAGS		:=	-Iincs -O3
-LDFLAGS		:=	
+CFLAGS		:=	-Iincs -g
+LDFLAGS		:=  -lm
 RM			:=	rm -f
 
 all:			$(NAME)
 
 $(NAME):		$(OBJS)
 				@echo "Linking $(NAME)"
-				@$(CC) $(LDFLAGS) $^ -o $@
+				@$(CC) $^ -o $@ $(LDFLAGS)
 
 objs/%.o:		srcs/%.c $(HDRS)
 				@mkdir -p objs
