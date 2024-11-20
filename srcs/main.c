@@ -1,6 +1,5 @@
 #include <unistd.h>
 #include <signal.h>
-#include <arpa/nameser.h>
 #include <arpa/inet.h>
 #include <stdbool.h>
 #include <resolv.h>
@@ -9,8 +8,11 @@
 #include <math.h>
 #include <float.h>
 #include <sys/time.h>
+#include <sys/types.h>
+#include <sys/socket.h>
+#include <netdb.h>
+#include <stdio.h>
 #include "ft_ping.h"
-#define TTL 255 // check this value
 
 volatile sig_atomic_t alarm_occured = false;
 volatile sig_atomic_t sigint_occured = false;
@@ -27,7 +29,7 @@ int fill_icmp_pkt(struct s_icmp_pkt *pkt, int icmp_seq){
     struct timeval t;
     
     if (gettimeofday(&t, NULL)){
-        printf(TIME_ERROR);
+        fprintf(stderr, TIME_ERROR);
         return 0;
     }
     bzero(pkt, sizeof(struct s_icmp_pkt));
@@ -53,7 +55,7 @@ int update_and_print_single_stat(struct s_icmp_stat *stat, struct s_icmp_pkt * c
     double time_diff;
 
     if(gettimeofday(&current_time, NULL)) {
-        printf(TIME_ERROR);
+        fprintf(stderr, TIME_ERROR);
         return 0;
     }
     ft->end_time = current_time;
@@ -65,9 +67,10 @@ int update_and_print_single_stat(struct s_icmp_stat *stat, struct s_icmp_pkt * c
         stat->max = time_diff;
     if (stat->min > time_diff)
         stat->min = time_diff;
-   // printf("%d %d %d %d %d", pkt->type, pkt->code, pkt->checksum, pkt->id, pkt->sequence);
-   // printf("%d %f %f %f %f %f %f\n", stat->number_of_elements, stat->sum, stat->sum_of_squared, stat->average, stat->mdev, stat->min, stat->max);
-    printf("%ld bytes from %s: icmp_seq=%d ttl=%d time=%.2f\n", sizeof(struct s_icmp_pkt), ft->addr, pkt->sequence, 58, time_diff);
+    if (strcmp(ft->hostaddress, ft->hostname))
+        printf("%ld bytes from %s (%s): icmp_seq=%d ttl=%d time=%.2f\n", sizeof(struct s_icmp_pkt), ft->hostname, ft->hostaddress, pkt->sequence, 58, time_diff);
+    else
+        printf("%ld bytes from %s: icmp_seq=%d ttl=%d time=%.2f\n", sizeof(struct s_icmp_pkt), ft->hostname, pkt->sequence, 58, time_diff);
     return 1;
 }
 
@@ -78,67 +81,94 @@ void print_stat(struct s_icmp_stat * stat, struct s_ft_ping const * ft){
     time_diff = (ft->end_time.tv_sec - ft->start_time.tv_sec) * 1000 + ((double)ft->end_time.tv_usec - ft->start_time.tv_usec)/1000;
     stat->average = stat->sum / stat->number_of_elements;
     stat->mdev = sqrt(stat->sum_of_squared / stat->number_of_elements - pow(stat->average, 2));
-    printf("\n--- %s ping statistics ---\n", ft->addr);
+    printf("\n--- %s ping statistics ---\n", ft->hostname);
     printf("%d pactkets transmitted, %d received, %d%% packet loss, time %.0fms\n", ft->icmp_seq, stat->number_of_elements, 100 - stat->number_of_elements/ft->icmp_seq * 100, time_diff);
     printf("rtt min/avg/max/mdev = %.3f/%.3f/%.3f/%.3f\n", stat->min, stat->average, stat->max, stat->mdev);
+}
+
+int dns_lookup(struct s_ft_ping *ft){
+    struct addrinfo hints, *result;
+
+    memset(&hints, 0, sizeof(hints));
+    hints.ai_family = AF_INET;
+    hints.ai_socktype = SOCK_DGRAM;
+    hints.ai_flags |= AI_CANONNAME;
+    if(getaddrinfo (ft->hostname, NULL, &hints, &result)) 
+        return 0;
+    ft->serv_addr = *result->ai_addr;
+    freeaddrinfo(result);
+    if (!inet_ntop(AF_INET, &(((struct sockaddr_in*)&ft->serv_addr)->sin_addr), ft->hostaddress, INET_ADDRSTRLEN))
+    {
+        fprintf(stderr, "%s\n", strerror(errno));
+        return 0;
+    }
+    return 1;
 }
 
 int main(int argc, char** argv){
     struct s_ft_ping ft;
     struct s_icmp_pkt pkt;
     struct s_icmp_stat stat;
+   // char buff[24];
 
-
-    
-
-
-    ft.addr = "1.1.1.1";
-    ft.icmp_seq = 0;
-    printf("%ld\n", sizeof(struct s_icmp_pkt));
     // parse arguments
+    ft.hostname = "1.1.1.1";
+    // Perform DNS lookup
+    if (!dns_lookup(&ft)) {
+        fprintf(stderr, "%s: %s: Name or service not known\n", argv[0], ft.hostname);
+        return 1;
+    }
+    ft.icmp_seq = 0;
     signal(SIGALRM, alarm_handler);
     signal(SIGINT, sigint_handler);
-    // make dns query or parse addr
-    if (inet_pton(AF_INET, ft.addr, &ft.serv_addr.sin_addr) != 1) {
-        printf("%s: %s: Name or service not known", argv[0], ft.addr);
-        return 2;
-    }
     // open socket with datagram protocol
     ft.sockfd = socket(AF_INET, SOCK_DGRAM, IPPROTO_ICMP);
     if (ft.sockfd == -1) {
-        printf("%s\n", strerror(errno));
+        fprintf(stderr, "%s: %s\n", argv[0], strerror(errno));
         return 1;
     }
-    ft.serv_addr.sin_family = AF_INET;
     // Connect socket
-    if (connect(ft.sockfd, (struct sockaddr*)&ft.serv_addr, sizeof(ft.serv_addr)) == -1) {
-        printf("%s: %s\n", argv[0], strerror(errno));
+    if (connect(ft.sockfd, &ft.serv_addr, sizeof(ft.serv_addr)) == -1) {
+        fprintf(stderr, "%s: %s\n", argv[0], strerror(errno));
         close(ft.sockfd);
         return 1;
     }
     initialize_stat(&stat);
     if (gettimeofday(&ft.start_time, NULL)){
-        printf(TIME_ERROR);
+        fprintf(stderr, TIME_ERROR);
+        close(ft.sockfd);
         return 1;
     }
+    printf("FT_PING %s (%s) %ld bytes of data. \n", ft.hostname, ft.hostaddress, sizeof(struct s_icmp_pkt));
     while (!sigint_occured) {
-        if (!fill_icmp_pkt(&pkt, ft.icmp_seq))
+        if (!fill_icmp_pkt(&pkt, ft.icmp_seq)) {
+            close(ft.sockfd);
             return 1;
+        }
         // send echo request, with timestamp in data (ICMP type 8 code 0)
         if (send(ft.sockfd, &pkt, sizeof(pkt), 0) == -1) {
-            printf("%s: %s\n", argv[0], strerror(errno));
+            fprintf(stderr, "%s: %s\n", argv[0], strerror(errno));
+            close(ft.sockfd);
             return 1;
         }
         ft.icmp_seq++;
         alarm(1);
         // make blocking read on socket waiting for echo reply (ICMP type 0 code 0)
+    //    memset(buff, 0, 24);
+    //    recv(ft.sockfd, buff, 24, 0);
+    //    for (int i = 0 ; i < 24 ; i++)
+    //        printf("%hhx ",buff[i]);
+    //    printf("\n");
         if (read(ft.sockfd, &pkt, sizeof(pkt)) == -1){
             printf("%s: %s\n", argv[0], strerror(errno));
+            close(ft.sockfd);
             return 1;
         }
         if (!alarm_occured)
-            if(!update_and_print_single_stat(&stat, &pkt, &ft))
+            if(!update_and_print_single_stat(&stat, &pkt, &ft)) {
+                close(ft.sockfd);
                 return 1;
+            }
         while (!alarm_occured && !sigint_occured);
         alarm_occured = false;
     }

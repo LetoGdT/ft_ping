@@ -25,9 +25,10 @@ struct s_icmp_stat {
 
 struct s_ft_ping {
     uint16_t icmp_seq ;
-    char *addr;
+    char *hostname;
+    char hostaddress[INET_ADDRSTRLEN];
     int sockfd;
-    struct sockaddr_in serv_addr;
+    struct sockaddr serv_addr;
     struct timeval start_time;
     struct timeval end_time;
 };
@@ -39,5 +40,6 @@ void alarm_handler(int sig);
 void initialize_stat(struct s_icmp_stat * stat);
 int update_and_print_single_stat(struct s_icmp_stat *stat, struct s_icmp_pkt * const pkt, struct s_ft_ping * ft);
 void print_stat(struct s_icmp_stat * stat, struct s_ft_ping const * ft);
+int dns_lookup(struct s_ft_ping *ft);
 
 #endif
