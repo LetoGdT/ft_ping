@@ -25,6 +25,22 @@ void sigint_handler(int sig){
     sigint_occured = true;
 }
 
+int parse_arguments(int argc, char ** argv, struct s_ft_ping * ft){
+    ft->is_verbose = false;
+    ft->hostname = 0;
+    if (argc != 2 && argc != 3){
+        fprintf(stderr, "%s: Usage: %s archlinux.org [-v]\n", argv[0], argv[0]);
+        return 0;
+    }
+    for (int i = 1 ; i < argc ; i++) {
+        if (!strcmp("-v", argv[i]))
+            ft->is_verbose = true;
+        else
+            ft->hostname = argv[i];
+    }
+    printf("hostname: %s, is_verbose: %s\n", ft->hostname, ft->is_verbose?"true":"false");
+}
+
 int fill_icmp_pkt(struct s_icmp_pkt *pkt, int icmp_seq){
     struct timeval t;
     
@@ -68,9 +84,9 @@ int update_and_print_single_stat(struct s_icmp_stat *stat, struct s_icmp_pkt * c
     if (stat->min > time_diff)
         stat->min = time_diff;
     if (strcmp(ft->hostaddress, ft->hostname))
-        printf("%ld bytes from %s (%s): icmp_seq=%d ttl=%d time=%.2f\n", sizeof(struct s_icmp_pkt), ft->hostname, ft->hostaddress, pkt->sequence, 58, time_diff);
+        printf("%ld bytes from %s (%s): icmp_seq=%d ttl=%hhd time=%.2f\n", sizeof(struct s_icmp_pkt), ft->hostname, ft->hostaddress, pkt->sequence, ft->TTL, time_diff);
     else
-        printf("%ld bytes from %s: icmp_seq=%d ttl=%d time=%.2f\n", sizeof(struct s_icmp_pkt), ft->hostname, pkt->sequence, 58, time_diff);
+        printf("%ld bytes from %s: icmp_seq=%hhd ttl=%d time=%.2f\n", sizeof(struct s_icmp_pkt), ft->hostname, pkt->sequence, ft->TTL, time_diff);
     return 1;
 }
 
@@ -109,10 +125,11 @@ int main(int argc, char** argv){
     struct s_ft_ping ft;
     struct s_icmp_pkt pkt;
     struct s_icmp_stat stat;
-   // char buff[24];
+    char pkt_rcv_buff[60 + sizeof(struct s_icmp_pkt)];
 
     // parse arguments
-    ft.hostname = "1.1.1.1";
+    if (!parse_arguments(argc, argv, &ft))
+        return 1;
     // Perform DNS lookup
     if (!dns_lookup(&ft)) {
         fprintf(stderr, "%s: %s: Name or service not known\n", argv[0], ft.hostname);
@@ -122,14 +139,14 @@ int main(int argc, char** argv){
     signal(SIGALRM, alarm_handler);
     signal(SIGINT, sigint_handler);
     // open socket with datagram protocol
-    ft.sockfd = socket(AF_INET, SOCK_DGRAM, IPPROTO_ICMP);
+    ft.sockfd = socket(AF_INET, SOCK_RAW, IPPROTO_ICMP);
     if (ft.sockfd == -1) {
-        fprintf(stderr, "%s: %s\n", argv[0], strerror(errno));
+        fprintf(stderr, "%s: Cannot open socket: %s\n", argv[0], strerror(errno));
         return 1;
     }
     // Connect socket
     if (connect(ft.sockfd, &ft.serv_addr, sizeof(ft.serv_addr)) == -1) {
-        fprintf(stderr, "%s: %s\n", argv[0], strerror(errno));
+        fprintf(stderr, "%s: Cannot connect to socket: %s\n", argv[0], strerror(errno));
         close(ft.sockfd);
         return 1;
     }
@@ -147,23 +164,23 @@ int main(int argc, char** argv){
         }
         // send echo request, with timestamp in data (ICMP type 8 code 0)
         if (send(ft.sockfd, &pkt, sizeof(pkt), 0) == -1) {
-            fprintf(stderr, "%s: %s\n", argv[0], strerror(errno));
+            fprintf(stderr, "%s: Cannot send packets over socket: %s\n", argv[0], strerror(errno));
             close(ft.sockfd);
             return 1;
         }
         ft.icmp_seq++;
         alarm(1);
         // make blocking read on socket waiting for echo reply (ICMP type 0 code 0)
-    //    memset(buff, 0, 24);
-    //    recv(ft.sockfd, buff, 24, 0);
-    //    for (int i = 0 ; i < 24 ; i++)
-    //        printf("%hhx ",buff[i]);
-    //    printf("\n");
-        if (read(ft.sockfd, &pkt, sizeof(pkt)) == -1){
+        memset(pkt_rcv_buff, 0, sizeof(pkt_rcv_buff));
+        if (read(ft.sockfd, pkt_rcv_buff, sizeof(pkt_rcv_buff)) == -1){
             printf("%s: %s\n", argv[0], strerror(errno));
             close(ft.sockfd);
             return 1;
         }
+        // Pack icmp header and data into structure
+        memcpy(&pkt, pkt_rcv_buff + (pkt_rcv_buff[0]&0xf) * 4, sizeof(struct s_icmp_pkt));
+        // Put IP TTL value into stat struct
+        ft.TTL = pkt_rcv_buff[8];
         if (!alarm_occured)
             if(!update_and_print_single_stat(&stat, &pkt, &ft)) {
                 close(ft.sockfd);
