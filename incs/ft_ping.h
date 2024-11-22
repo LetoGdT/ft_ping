@@ -3,6 +3,7 @@
 # include <sys/types.h>
 
 # define TIME_ERROR "Error when retrieving the time\n"
+# define RECVD_PKT_MAX_SIZE 60 + sizeof(struct s_icmp_pkt)
 
 struct __attribute__((packed)) s_icmp_pkt {
     uint8_t        type;
@@ -24,6 +25,7 @@ struct s_icmp_stat {
 };
 
 struct s_ft_ping {
+    char *          prog_name;
     bool            is_verbose;
     char *          hostname;
     char            hostaddress[INET_ADDRSTRLEN];
@@ -41,8 +43,12 @@ int  fill_icmp_pkt(struct s_icmp_pkt *pkt, int icmp_seq);
 void sigkill_handler(int sig);
 void alarm_handler(int sig);
 void initialize_stat(struct s_icmp_stat * stat);
+int  initialize_ping(struct s_ft_ping * ft, char * prog_name);
+int  open_socket(struct s_ft_ping * ft);
 int  update_and_print_single_stat(struct s_icmp_stat *stat, struct s_icmp_pkt * const pkt, struct s_ft_ping * ft);
 void print_stat(struct s_icmp_stat * stat, struct s_ft_ping const * ft);
 int  dns_lookup(struct s_ft_ping *ft);
+int  ping_single_loop(struct s_ft_ping * ft, struct s_icmp_pkt * pkt, struct s_icmp_stat * stat);
+void print_initial_message(struct s_ft_ping * ft);
 
 #endif
