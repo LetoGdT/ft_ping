@@ -54,7 +54,7 @@ int fill_icmp_pkt(struct s_icmp_pkt *pkt, int icmp_seq){
     pkt->id = getpid();
     pkt->sequence = icmp_seq;
     pkt->timestamp = t;
-    compute_checksum((unsigned char*)pkt, sizeof(struct s_icmp_pkt));
+    compute_icmp_checksum((unsigned char*)pkt, sizeof(struct s_icmp_pkt));
     return 1;
 }
 
@@ -69,6 +69,7 @@ void initialize_stat(struct s_icmp_stat * stat){
 int initialize_ping(struct s_ft_ping * ft, char * prog_name) {
     ft->prog_name = prog_name;
     ft->icmp_seq = 0;
+    ft->error_count = 0;
     // Get current time
     if (gettimeofday(&ft->start_time, NULL)){
         fprintf(stderr, TIME_ERROR);
@@ -98,14 +99,18 @@ int open_socket(struct s_ft_ping * ft) {
         close(ft->sockfd);
         return 0;
     }
+    int ttl = 15;
+    setsockopt(ft->sockfd, IPPROTO_IP, IP_TTL, &ttl, sizeof(ttl));
     return 1;
 }
+
+
 
 int update_and_print_single_stat(struct s_icmp_stat *stat, struct s_icmp_pkt * const pkt, struct s_ft_ping * ft){
     struct timeval current_time;
     double time_diff;
 
-    if(gettimeofday(&current_time, NULL)) {
+    if (gettimeofday(&current_time, NULL)) {
         fprintf(stderr, TIME_ERROR);
         return 0;
     }
@@ -123,7 +128,6 @@ int update_and_print_single_stat(struct s_icmp_stat *stat, struct s_icmp_pkt * c
         printf(" (%s): ",ft->hostaddress);
     else
         printf(": ");
-    
     printf("icmp_seq=%hhd ", pkt->sequence);
     if (ft->is_verbose)
         printf("ident=%d ", pkt->id);
@@ -139,7 +143,10 @@ void print_stat(struct s_icmp_stat * stat, struct s_ft_ping const * ft){
     stat->average = stat->sum / stat->number_of_elements;
     stat->mdev = sqrt(stat->sum_of_squared / stat->number_of_elements - pow(stat->average, 2));
     printf("\n--- %s ping statistics ---\n", ft->hostname);
-    printf("%d pactkets transmitted, %d received, %d%% packet loss, time %.0fms\n", ft->icmp_seq, stat->number_of_elements, 100 - stat->number_of_elements/ft->icmp_seq * 100, time_diff);
+    printf("%d pactkets transmitted, %d received, ", ft->icmp_seq, stat->number_of_elements);
+    if (ft->error_count != 0)
+        printf("+%u errors, ", ft->error_count);
+    printf("%d%% packet loss, time %.0fms\n", 100 - stat->number_of_elements/ft->icmp_seq * 100, time_diff);
     printf("rtt min/avg/max/mdev = %.3f/%.3f/%.3f/%.3f\n", stat->min, stat->average, stat->max, stat->mdev);
 }
 
@@ -170,8 +177,39 @@ void print_initial_message(struct s_ft_ping * ft){
     printf("FT_PING %s (%s) %ld bytes of data. \n", ft->hostname, ft->hostaddress, sizeof(struct s_icmp_pkt));
 }
 
+int validate_packet(char * const raw_pkt, struct s_icmp_pkt * pkt, struct s_ft_ping * ft) {
+    uint16_t old_checksum;
+
+    // Verify IP header checksum
+    if (!verify_ip_checksum(raw_pkt)) {
+        printf("Ip checksum error\n");
+        return 0;
+    }
+    // Populate icmp_pkt struct
+    memcpy(pkt, raw_pkt + (raw_pkt[0]&0xf) * 4, sizeof(struct s_icmp_pkt));
+    // Put IP TTL value into ft struct
+    ft->TTL = raw_pkt[8];
+    // Verify icmp checksum
+    old_checksum = pkt->checksum;
+    compute_icmp_checksum((unsigned char *)pkt, sizeof(struct s_icmp_pkt));
+    if (old_checksum != pkt->checksum) {
+        printf("ICMP checksum error\n");
+        return 0;
+    }
+    if (pkt->id != getpid()) {
+        printf("id not recognised");
+        return 0;
+    }
+    if (pkt->type != 0 || pkt->code != 0) {
+        printf("Echo reply not received, error occured\n");
+        return 0;
+    }
+    return 1;
+}
+
+
 int ping_single_loop(struct s_ft_ping * ft, struct s_icmp_pkt * pkt, struct s_icmp_stat * stat){
-    char pkt_rcv_buff[RECVD_PKT_MAX_SIZE];
+    unsigned char pkt_rcv_buff[RECVD_PKT_MAX_SIZE];
 
     ft->icmp_seq++;
     if (!fill_icmp_pkt(pkt, ft->icmp_seq)) {
@@ -194,10 +232,9 @@ int ping_single_loop(struct s_ft_ping * ft, struct s_icmp_pkt * pkt, struct s_ic
         return 0;
     }
     if (!alarm_occured) {
-        // Pack icmp header and data into structure
-        memcpy(pkt, pkt_rcv_buff + (pkt_rcv_buff[0]&0xf) * 4, sizeof(struct s_icmp_pkt));
-        // Put IP TTL value into stat struct
-        ft->TTL = pkt_rcv_buff[8];
+        // Validate and pack icmp header and data into structure
+        if (!validate_packet(pkt_rcv_buff, pkt, ft)) 
+            return 1;
         if(!update_and_print_single_stat(stat, pkt, ft)) {
             close(ft->sockfd);
             return 0;

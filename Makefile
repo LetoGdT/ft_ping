@@ -8,7 +8,7 @@ OBJS		:=	$(addprefix objs/,$(notdir $(patsubst %.c,%.o,$(SRCS))))
 OBJS_BONUS	:=	$(addprefix objs/,$(notdir $(patsubst %.c,%.o,$(SRCS_BONUS))))
 
 CC			:=	gcc
-CFLAGS		:=	-Iincs -g
+CFLAGS		:=	-Iincs -g3
 LDFLAGS		:=  -lm
 RM			:=	rm -f
 

@@ -1,6 +1,6 @@
 #include <sys/types.h>
 
-void compute_checksum(unsigned char * ICMP_header, size_t size){
+void compute_icmp_checksum(unsigned char * ICMP_header, size_t size){
     size_t i;
     u_int32_t checksum;
     // Set the checksum field in the header to 0
@@ -24,4 +24,24 @@ void compute_checksum(unsigned char * ICMP_header, size_t size){
     // Store the checksum in the ICPM header
     ICMP_header[2] = checksum >> 8;
     ICMP_header[3] = checksum & 0xff;
+}
+
+int verify_ip_checksum(void *ip_packet) {
+    u_int32_t sum = 0;
+    u_int16_t *data = (u_int16_t *)ip_packet;
+    int len = ((data[0]&0x0f)) * 4;
+    
+    // Sum all 16-bit words
+    while (len > 1) {
+        sum += *data++;
+        len -= 2;
+    }
+    // Add any remaining byte (if length is odd)
+    if (len == 1) {
+        sum += *(u_int8_t *)data;
+    }
+    // Fold 32-bit sum to 16 bits (one's complement)
+    sum = (sum >> 16) + (sum & 0xFFFF);
+    // Verify checksum is valid
+    return sum^0xFFFF == 0;
 }
