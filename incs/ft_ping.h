@@ -43,7 +43,6 @@ void compute_icmp_checksum(unsigned char * ICMP_header, size_t size);
 int  verify_ip_checksum(void *ip_packet);
 int  fill_icmp_pkt(struct s_icmp_pkt *pkt, int icmp_seq);
 void sigkill_handler(int sig);
-void alarm_handler(int sig);
 void initialize_stat(struct s_icmp_stat * stat);
 int  initialize_ping(struct s_ft_ping * ft, char * prog_name);
 int  open_socket(struct s_ft_ping * ft);

@@ -10,16 +10,12 @@
 #include <sys/time.h>
 #include <sys/types.h>
 #include <sys/socket.h>
+#include <sys/select.h>
 #include <netdb.h>
 #include <stdio.h>
 #include "ft_ping.h"
 
-volatile sig_atomic_t alarm_occured = false;
 volatile sig_atomic_t sigint_occured = false;
-
-void alarm_handler(int sig){
-    alarm_occured = true;
-}
 
 void sigint_handler(int sig){
     sigint_occured = true;
@@ -76,7 +72,6 @@ int initialize_ping(struct s_ft_ping * ft, char * prog_name) {
         return 0;
     }
     // Register signal handlers
-    signal(SIGALRM, alarm_handler);
     signal(SIGINT, sigint_handler);
     // Perform DNS lookup
     if (!dns_lookup(ft)) {
@@ -99,12 +94,10 @@ int open_socket(struct s_ft_ping * ft) {
         close(ft->sockfd);
         return 0;
     }
-    int ttl = 15;
+    int ttl = 14;
     setsockopt(ft->sockfd, IPPROTO_IP, IP_TTL, &ttl, sizeof(ttl));
     return 1;
 }
-
-
 
 int update_and_print_single_stat(struct s_icmp_stat *stat, struct s_icmp_pkt * const pkt, struct s_ft_ping * ft){
     struct timeval current_time;
@@ -114,7 +107,6 @@ int update_and_print_single_stat(struct s_icmp_stat *stat, struct s_icmp_pkt * c
         fprintf(stderr, TIME_ERROR);
         return 0;
     }
-    ft->end_time = current_time;
     time_diff = (current_time.tv_sec - pkt->timestamp.tv_sec) * 1000 + ((double)current_time.tv_usec - pkt->timestamp.tv_usec)/1000;
     stat->sum += time_diff;
     stat->sum_of_squared += pow(time_diff, 2);
@@ -137,17 +129,27 @@ int update_and_print_single_stat(struct s_icmp_stat *stat, struct s_icmp_pkt * c
 
 
 void print_stat(struct s_icmp_stat * stat, struct s_ft_ping const * ft){
+    struct timeval current_time;
     double time_diff;
 
+    if (gettimeofday(&current_time, NULL)) {
+        fprintf(stderr, TIME_ERROR);
+        return ;
+    }
     time_diff = (ft->end_time.tv_sec - ft->start_time.tv_sec) * 1000 + ((double)ft->end_time.tv_usec - ft->start_time.tv_usec)/1000;
+    if (time_diff < 0)
+        time_diff = 0;
     stat->average = stat->sum / stat->number_of_elements;
     stat->mdev = sqrt(stat->sum_of_squared / stat->number_of_elements - pow(stat->average, 2));
     printf("\n--- %s ping statistics ---\n", ft->hostname);
     printf("%d pactkets transmitted, %d received, ", ft->icmp_seq, stat->number_of_elements);
     if (ft->error_count != 0)
         printf("+%u errors, ", ft->error_count);
-    printf("%d%% packet loss, time %.0fms\n", 100 - stat->number_of_elements/ft->icmp_seq * 100, time_diff);
-    printf("rtt min/avg/max/mdev = %.3f/%.3f/%.3f/%.3f\n", stat->min, stat->average, stat->max, stat->mdev);
+    printf("%.0lf%% packet loss, time %.0fms\n", 100 - ((double)stat->number_of_elements/ft->icmp_seq) * 100, time_diff);
+    if (stat->number_of_elements != 0)
+        printf("rtt min/avg/max/mdev = %.3f/%.3f/%.3f/%.3f\n", stat->min, stat->average, stat->max, stat->mdev);
+    else
+        printf("\n");
 }
 
 int dns_lookup(struct s_ft_ping *ft){
@@ -207,42 +209,71 @@ int validate_packet(char * const raw_pkt, struct s_icmp_pkt * pkt, struct s_ft_p
     return 1;
 }
 
-
 int ping_single_loop(struct s_ft_ping * ft, struct s_icmp_pkt * pkt, struct s_icmp_stat * stat){
     unsigned char pkt_rcv_buff[RECVD_PKT_MAX_SIZE];
+    struct timespec timeout;
+    fd_set read_fds;
+    int ready_count;
+    struct timeval loop_start;
+    struct timeval loop_end;
+    long int timediff;
 
+    timeout.tv_sec = 1;
+    timeout.tv_nsec = 0;
     ft->icmp_seq++;
     if (!fill_icmp_pkt(pkt, ft->icmp_seq)) {
         close(ft->sockfd);
         return 0;
     }
+    if (gettimeofday(&loop_start, NULL)) {
+        fprintf(stderr, TIME_ERROR);
+        close(ft->sockfd);
+        return 0;
+    }
+    ft->end_time = loop_start;
     // send echo request, with timestamp in data (ICMP type 8 code 0)
     if (send(ft->sockfd, pkt, sizeof(*pkt), 0) == -1) {
         fprintf(stderr, "%s: Cannot send packets over socket: %s\n", ft->prog_name, strerror(errno));
         close(ft->sockfd);
         return 0;
     }
-    // Plan alarm signal in 1 second
-    alarm(1);
-    // make blocking read on socket
+    // Wait for data to arrive on the socket
+    ready_count = pselect(ft->sockfd + 1, &read_fds, NULL, NULL, &timeout, NULL);
+    if (ready_count < 0) {
+        if (errno == EINTR) {
+            ft->icmp_seq--;
+            return 1;
+        }
+        printf("%s: %s\n", ft->prog_name, strerror(errno));
+        close(ft->sockfd);
+        return 0;
+    }
+    else if (ready_count == 0 || !FD_ISSET(ft->sockfd, &read_fds)) {
+        printf("%d No data read\n", ready_count);
+        return 1;
+    }
     memset(pkt_rcv_buff, 0, sizeof(pkt_rcv_buff));
     if (read(ft->sockfd, pkt_rcv_buff, sizeof(pkt_rcv_buff)) == -1){
         printf("%s: %s\n", ft->prog_name, strerror(errno));
         close(ft->sockfd);
         return 0;
     }
-    if (!alarm_occured) {
-        // Validate and pack icmp header and data into structure
-        if (!validate_packet(pkt_rcv_buff, pkt, ft)) 
-            return 1;
-        if(!update_and_print_single_stat(stat, pkt, ft)) {
-            close(ft->sockfd);
-            return 0;
-        }
+    // Validate and pack icmp header and data into structure
+    if (!validate_packet(pkt_rcv_buff, pkt, ft)) 
+        return 1;
+    if(!update_and_print_single_stat(stat, pkt, ft)) {
+        close(ft->sockfd);
+        return 0;
     }
-    // Wait until the alarm signal occurs or until the user requests the program stop
-    while (!alarm_occured && !sigint_occured);
-    alarm_occured = false;
+    if (gettimeofday(&loop_end, NULL)) {
+        fprintf(stderr, TIME_ERROR);
+        close(ft->sockfd);
+        return 0;
+    }
+    // Compute remaining time to sleep so that the loop is 1 second
+    timediff = pow(10, 6) - ((loop_end.tv_sec - loop_start.tv_sec) * pow(10, 6) + (loop_end.tv_usec - loop_start.tv_usec));
+    usleep(timediff);
+    return 1;
 } 
 
 int main(int argc, char** argv){
