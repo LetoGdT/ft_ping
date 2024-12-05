@@ -11,6 +11,7 @@
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <sys/select.h>
+#include <byteswap.h>
 #include <netdb.h>
 #include <stdio.h>
 #include "ft_ping.h"
@@ -88,13 +89,7 @@ int open_socket(struct s_ft_ping * ft) {
         fprintf(stderr, "%s: Cannot open socket: %s\n", ft->prog_name, strerror(errno));
         return 0;
     }
-    // Connect socket
-    if (connect(ft->sockfd, &ft->serv_addr, sizeof(ft->serv_addr)) == -1) {
-        fprintf(stderr, "%s: Cannot connect to socket: %s\n", ft->prog_name, strerror(errno));
-        close(ft->sockfd);
-        return 0;
-    }
-    int ttl = 14;
+    int ttl = 5;
     setsockopt(ft->sockfd, IPPROTO_IP, IP_TTL, &ttl, sizeof(ttl));
     return 1;
 }
@@ -193,33 +188,82 @@ int validate_packet(char * const raw_pkt, struct s_icmp_pkt * pkt, struct s_ft_p
     ft->TTL = raw_pkt[8];
     // Verify icmp checksum
     old_checksum = pkt->checksum;
-    compute_icmp_checksum((unsigned char *)pkt, sizeof(struct s_icmp_pkt));
+    // Compute checksum over the whole data, with the length retrieved from the ip header
+    compute_icmp_checksum((unsigned char *)raw_pkt + (raw_pkt[0]&0xf) * 4, bswap_16(((uint16_t*)(raw_pkt))[1]) - (raw_pkt[0]&0xf) * 4);
     if (old_checksum != pkt->checksum) {
         printf("ICMP checksum error\n");
-        return 0;
-    }
-    if (pkt->id != getpid()) {
-        printf("id not recognised");
         return 0;
     }
     if (pkt->type != 0 || pkt->code != 0) {
         printf("Echo reply not received, error occured\n");
         return 0;
     }
+    if (pkt->id != getpid()) {
+        printf("recvd id : %d pid : %d\n", pkt->id, getpid());
+        printf("id not recognised\n");
+        return 0;
+    }
+    return 1;
+}
+
+int read_loop(struct s_ft_ping * ft, struct s_icmp_pkt * pkt, struct s_icmp_stat * stat, struct timeval * loop_start) {
+    struct timespec timeout;
+    unsigned char pkt_rcv_buff[RECVD_PKT_MAX_SIZE];
+    int ready_count;
+    fd_set read_fds;
+    struct timeval current_time;
+    double timediff;
+
+    timeout.tv_sec = 0;
+    timeout.tv_nsec = CYCLE_TIME * pow(10, 6);
+    if (gettimeofday(&current_time, NULL)) {
+        fprintf(stderr, TIME_ERROR);
+        close(ft->sockfd);
+        return 0;
+    }
+    do {
+        timediff = (current_time.tv_sec - loop_start->tv_sec) * pow(10, 6) + current_time.tv_usec - loop_start->tv_usec;
+        timeout.tv_nsec -= timediff * pow(10, 3);
+        // Wait for data to arrive on the socket
+        ready_count = pselect(ft->sockfd + 1, &read_fds, NULL, NULL, &timeout, NULL);
+        if (ready_count < 0) {
+            // Case where user requested the program stop by CTRL-C
+            if (errno == EINTR) {
+                ft->icmp_seq--;
+                return 1;
+            }
+            // Case where pselect had an error
+            printf("%s: %s\n", ft->prog_name, strerror(errno));
+            close(ft->sockfd);
+            return 0;
+        }
+        // Case where the timeout expired and no data was received
+        else if (ready_count == 0 || !FD_ISSET(ft->sockfd, &read_fds)) {
+            printf("%d %s : No data read\n", ready_count, FD_ISSET(ft->sockfd, &read_fds)?"Read ready":"Read not ready");
+            return 1;
+        }
+        // Case where data was received
+        memset(pkt_rcv_buff, 0, sizeof(pkt_rcv_buff));
+        if (read(ft->sockfd, pkt_rcv_buff, sizeof(pkt_rcv_buff)) == -1){
+            printf("%s: %s\n", ft->prog_name, strerror(errno));
+            return 0;
+        }
+        // Validate and pack icmp header and data into structure
+        if (!validate_packet(pkt_rcv_buff, pkt, ft)) 
+            return 1;
+        if(!update_and_print_single_stat(stat, pkt, ft)) 
+            return 0;
+        // The data has been received and treated properly
+        return 1;
+    } while (timediff > 0);
     return 1;
 }
 
 int ping_single_loop(struct s_ft_ping * ft, struct s_icmp_pkt * pkt, struct s_icmp_stat * stat){
-    unsigned char pkt_rcv_buff[RECVD_PKT_MAX_SIZE];
-    struct timespec timeout;
-    fd_set read_fds;
-    int ready_count;
     struct timeval loop_start;
     struct timeval loop_end;
     long int timediff;
 
-    timeout.tv_sec = 1;
-    timeout.tv_nsec = 0;
     ft->icmp_seq++;
     if (!fill_icmp_pkt(pkt, ft->icmp_seq)) {
         close(ft->sockfd);
@@ -232,36 +276,13 @@ int ping_single_loop(struct s_ft_ping * ft, struct s_icmp_pkt * pkt, struct s_ic
     }
     ft->end_time = loop_start;
     // send echo request, with timestamp in data (ICMP type 8 code 0)
-    if (send(ft->sockfd, pkt, sizeof(*pkt), 0) == -1) {
+    if (sendto(ft->sockfd, pkt, sizeof(*pkt), 0, &ft->serv_addr, sizeof(struct sockaddr)) == -1) {
         fprintf(stderr, "%s: Cannot send packets over socket: %s\n", ft->prog_name, strerror(errno));
         close(ft->sockfd);
         return 0;
     }
-    // Wait for data to arrive on the socket
-    ready_count = pselect(ft->sockfd + 1, &read_fds, NULL, NULL, &timeout, NULL);
-    if (ready_count < 0) {
-        if (errno == EINTR) {
-            ft->icmp_seq--;
-            return 1;
-        }
-        printf("%s: %s\n", ft->prog_name, strerror(errno));
-        close(ft->sockfd);
-        return 0;
-    }
-    else if (ready_count == 0 || !FD_ISSET(ft->sockfd, &read_fds)) {
-        printf("%d No data read\n", ready_count);
-        return 1;
-    }
-    memset(pkt_rcv_buff, 0, sizeof(pkt_rcv_buff));
-    if (read(ft->sockfd, pkt_rcv_buff, sizeof(pkt_rcv_buff)) == -1){
-        printf("%s: %s\n", ft->prog_name, strerror(errno));
-        close(ft->sockfd);
-        return 0;
-    }
-    // Validate and pack icmp header and data into structure
-    if (!validate_packet(pkt_rcv_buff, pkt, ft)) 
-        return 1;
-    if(!update_and_print_single_stat(stat, pkt, ft)) {
+    if (!read_loop(ft, pkt, stat, &loop_start)) {
+        printf("pouet\n");
         close(ft->sockfd);
         return 0;
     }
@@ -271,8 +292,9 @@ int ping_single_loop(struct s_ft_ping * ft, struct s_icmp_pkt * pkt, struct s_ic
         return 0;
     }
     // Compute remaining time to sleep so that the loop is 1 second
-    timediff = pow(10, 6) - ((loop_end.tv_sec - loop_start.tv_sec) * pow(10, 6) + (loop_end.tv_usec - loop_start.tv_usec));
-    usleep(timediff);
+    timediff = CYCLE_TIME * pow(10, 3) - ((loop_end.tv_sec - loop_start.tv_sec) * pow(10, 6) + (loop_end.tv_usec - loop_start.tv_usec));
+    if (timediff > 0)
+        usleep(timediff);
     return 1;
 } 
 

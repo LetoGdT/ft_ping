@@ -3,7 +3,9 @@
 # include <sys/types.h>
 
 # define TIME_ERROR "Error when retrieving the time\n"
-# define RECVD_PKT_MAX_SIZE 60 + 20 + sizeof(struct s_icmp_pkt)
+# define RECVD_PKT_MAX_SIZE 60 + 20 + 2 * sizeof(struct s_icmp_pkt)
+// Cycle time in ms
+# define CYCLE_TIME pow(10, 3)
 
 struct __attribute__((packed)) s_icmp_pkt {
     uint8_t        type;
@@ -52,5 +54,6 @@ int  dns_lookup(struct s_ft_ping *ft);
 int  ping_single_loop(struct s_ft_ping * ft, struct s_icmp_pkt * pkt, struct s_icmp_stat * stat);
 void print_initial_message(struct s_ft_ping * ft);
 int  validate_packet(char * const raw_pkt, struct s_icmp_pkt * pkt, struct s_ft_ping * ft);
+int read_loop(struct s_ft_ping * ft, struct s_icmp_pkt * pkt, struct s_icmp_stat * stat, struct timeval * loop_start);
 
 #endif
