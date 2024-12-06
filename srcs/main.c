@@ -1,4 +1,6 @@
 #include <unistd.h>
+#include <stdlib.h>
+#include <stdio.h>
 #include <signal.h>
 #include <arpa/inet.h>
 #include <stdbool.h>
@@ -13,7 +15,6 @@
 #include <sys/select.h>
 #include <byteswap.h>
 #include <netdb.h>
-#include <stdio.h>
 #include "ft_ping.h"
 
 volatile sig_atomic_t sigint_occured = false;
@@ -76,7 +77,7 @@ int initialize_ping(struct s_ft_ping * ft, char * prog_name) {
     signal(SIGINT, sigint_handler);
     // Perform DNS lookup
     if (!dns_lookup(ft)) {
-        fprintf(stderr, "%s: %s: Name or service not known\n", ft->prog_name, ft->hostname);
+        fprintf(stderr, DNS_LKUP_ERR);
         return 0;
     }
     return 1;
@@ -86,7 +87,7 @@ int open_socket(struct s_ft_ping * ft) {
     // open socket with datagram protocol
     ft->sockfd = socket(AF_INET, SOCK_RAW, IPPROTO_ICMP);
     if (ft->sockfd == -1) {
-        fprintf(stderr, "%s: Cannot open socket: %s\n", ft->prog_name, strerror(errno));
+        fprintf(stderr, SOCK_OPEN_ERR);
         return 0;
     }
     int ttl = 5;
@@ -166,7 +167,19 @@ int dns_lookup(struct s_ft_ping *ft){
     return 1;
 }
 
-void print_initial_message(struct s_ft_ping * ft){
+char* reverse_dns_lookup(char * const raw_pkt) {
+    struct sockaddr_in addr;
+    char hostname[1024];
+
+    addr.sin_family = AF_INET;
+    addr.sin_port = 0;
+    memcpy(&addr.sin_addr, raw_pkt + 12, 4);
+    if (getnameinfo((struct sockaddr*)&addr, sizeof(addr), hostname, sizeof(hostname), NULL, 0, NI_NAMEREQD))
+        return NULL;
+    return strdup(hostname);
+}
+
+void print_initial_message(struct s_ft_ping * ft) {
     if (ft->is_verbose){
         printf("%s: sock4.fd: %d (socktype: SOCK_RAW), hints.ai_family: AF_INET\n\n", ft->prog_name, ft->sockfd);
         printf("ai->ai->family: AF_INET, ai->ai_canonname: '%s'\n", ft->hostname);
@@ -176,12 +189,9 @@ void print_initial_message(struct s_ft_ping * ft){
 
 int validate_packet(char * const raw_pkt, struct s_icmp_pkt * pkt, struct s_ft_ping * ft) {
     uint16_t old_checksum;
+    enum error_code error_code;
 
-    // Verify IP header checksum
-    if (!verify_ip_checksum(raw_pkt)) {
-        printf("Ip checksum error\n");
-        return 0;
-    }
+    error_code = no_error;
     // Populate icmp_pkt struct
     memcpy(pkt, raw_pkt + (raw_pkt[0]&0xf) * 4, sizeof(struct s_icmp_pkt));
     // Put IP TTL value into ft struct
@@ -190,20 +200,56 @@ int validate_packet(char * const raw_pkt, struct s_icmp_pkt * pkt, struct s_ft_p
     old_checksum = pkt->checksum;
     // Compute checksum over the whole data, with the length retrieved from the ip header
     compute_icmp_checksum((unsigned char *)raw_pkt + (raw_pkt[0]&0xf) * 4, bswap_16(((uint16_t*)(raw_pkt))[1]) - (raw_pkt[0]&0xf) * 4);
-    if (old_checksum != pkt->checksum) {
-        printf("ICMP checksum error\n");
-        return 0;
-    }
-    if (pkt->type != 0 || pkt->code != 0) {
-        printf("Echo reply not received, error occured\n");
-        return 0;
-    }
-    if (pkt->id != getpid()) {
-        printf("recvd id : %d pid : %d\n", pkt->id, getpid());
-        printf("id not recognised\n");
+    // Verify IP header checksum
+    if (!verify_ip_checksum(raw_pkt))
+        error_code = ip_chksum;
+    else if (old_checksum != pkt->checksum) 
+        error_code = icmp_chksum;
+    else if (pkt->type != 0 || pkt->code != 0) 
+        error_code = not_echo;
+    else if (pkt->id != getpid())
+        return 1;
+    if (error_code) {
+        print_error_code(raw_pkt, error_code, pkt, ft);
         return 0;
     }
     return 1;
+}
+
+void print_error_code(char * const raw_pkt, enum error_code error_code, struct s_icmp_pkt * const pkt, struct s_ft_ping * const ft) {
+    char * responding_server_hostname;
+    char responding_server_hostaddress[INET_ADDRSTRLEN];
+
+    responding_server_hostname = reverse_dns_lookup(raw_pkt);
+    if (responding_server_hostname == NULL) {
+        responding_server_hostname = strdup("");
+    }
+    if (inet_ntop(AF_INET, raw_pkt + 12, responding_server_hostaddress, INET_ADDRSTRLEN) == NULL) {
+        responding_server_hostaddress[0] = '\0';
+    }
+    if (!strcmp(ft->hostaddress, ft->hostname))
+        printf("From %s: icmp_seq=%hu ", responding_server_hostaddress, ft->icmp_seq);
+    else
+        printf("From %s (%s): icmp_seq=%hu ", responding_server_hostname, responding_server_hostaddress, ft->icmp_seq);
+    switch(error_code) {
+        case ip_chksum:
+            printf(IP_CHKSUM_ERR);
+            break;
+        case icmp_chksum:
+            printf(ICMP_CHKSUM_ERR);
+            break;
+        default:
+            if (pkt->type == 3)
+                printf( DEST_UNREACHABLE);
+            else if (pkt->type == 11)
+                printf(TTL_EXP);
+            else if (pkt->type == 12)
+                printf(HDR_ERR);
+            else
+                printf(DFLT_ERR);
+            break;
+    }
+    free(responding_server_hostname);
 }
 
 int read_loop(struct s_ft_ping * ft, struct s_icmp_pkt * pkt, struct s_icmp_stat * stat, struct timeval * loop_start) {
@@ -233,19 +279,16 @@ int read_loop(struct s_ft_ping * ft, struct s_icmp_pkt * pkt, struct s_icmp_stat
                 return 1;
             }
             // Case where pselect had an error
-            printf("%s: %s\n", ft->prog_name, strerror(errno));
-            close(ft->sockfd);
+            fprintf(stderr, PRINT_STRERROR);
             return 0;
         }
         // Case where the timeout expired and no data was received
-        else if (ready_count == 0 || !FD_ISSET(ft->sockfd, &read_fds)) {
-            printf("%d %s : No data read\n", ready_count, FD_ISSET(ft->sockfd, &read_fds)?"Read ready":"Read not ready");
+        else if (ready_count == 0 || !FD_ISSET(ft->sockfd, &read_fds)) 
             return 1;
-        }
         // Case where data was received
         memset(pkt_rcv_buff, 0, sizeof(pkt_rcv_buff));
         if (read(ft->sockfd, pkt_rcv_buff, sizeof(pkt_rcv_buff)) == -1){
-            printf("%s: %s\n", ft->prog_name, strerror(errno));
+            fprintf(stderr, PRINT_STRERROR);
             return 0;
         }
         // Validate and pack icmp header and data into structure
@@ -277,12 +320,11 @@ int ping_single_loop(struct s_ft_ping * ft, struct s_icmp_pkt * pkt, struct s_ic
     ft->end_time = loop_start;
     // send echo request, with timestamp in data (ICMP type 8 code 0)
     if (sendto(ft->sockfd, pkt, sizeof(*pkt), 0, &ft->serv_addr, sizeof(struct sockaddr)) == -1) {
-        fprintf(stderr, "%s: Cannot send packets over socket: %s\n", ft->prog_name, strerror(errno));
+        fprintf(stderr, SEND_ERROR, ft->prog_name, strerror(errno));
         close(ft->sockfd);
         return 0;
     }
     if (!read_loop(ft, pkt, stat, &loop_start)) {
-        printf("pouet\n");
         close(ft->sockfd);
         return 0;
     }
