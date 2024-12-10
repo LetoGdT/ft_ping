@@ -4,7 +4,7 @@
 
 # define RECVD_PKT_MAX_SIZE 60 + 20 + 2 * sizeof(struct s_icmp_pkt)
 // Cycle time in ms
-# define CYCLE_TIME pow(10, 3)
+# define CYCLE_TIME 1000
 # define TIME_ERROR "Error when retrieving the time\n"
 # define SEND_ERROR "%s: Cannot send packets over socket: %s\n"
 # define PRINT_STRERROR "%s: %s\n", ft->prog_name, strerror(errno)
@@ -16,6 +16,7 @@
 # define SOCK_OPEN_ERR "%s: Cannot open socket: %s\n", ft->prog_name, strerror(errno)
 # define IP_CHKSUM_ERR "IP header checksum was wrong"
 # define ICMP_CHKSUM_ERR "ICMP header checksum was wrong"
+# define USAGE "%s: Usage: %s archlinux.org [-v]\n", argv[0], argv[0]
 
 enum error_code {
     no_error = 0,

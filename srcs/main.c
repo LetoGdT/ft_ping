@@ -24,17 +24,32 @@ void sigint_handler(int sig){
 }
 
 int parse_arguments(int argc, char ** argv, struct s_ft_ping * ft){
+    int opt;
+    
     ft->is_verbose = false;
     ft->hostname = 0;
     if (argc != 2 && argc != 3){
-        fprintf(stderr, "%s: Usage: %s archlinux.org [-v]\n", argv[0], argv[0]);
+        printf(USAGE);
         return 0;
     }
-    for (int i = 1 ; i < argc ; i++) {
-        if (!strcmp("-v", argv[i]))
-            ft->is_verbose = true;
-        else
+    while ((opt = getopt(argc, argv, "v?h")) != -1) {
+        switch (opt){
+            case 'v':
+                ft->is_verbose = true;
+                break;
+            case '?':
+            case 'h':
+            default:
+                printf(USAGE);
+                return 0;
+        }
+    }
+    if (optind < argc)
+        for (int i = optind ; i < argc ; i++ )
             ft->hostname = argv[i];
+    if (ft->hostname == 0) {
+        printf(USAGE);
+        return 1;
     }
     return 1;
 }
@@ -90,7 +105,7 @@ int open_socket(struct s_ft_ping * ft) {
         fprintf(stderr, SOCK_OPEN_ERR);
         return 0;
     }
-    int ttl = 5;
+    int ttl = 64;
     setsockopt(ft->sockfd, IPPROTO_IP, IP_TTL, &ttl, sizeof(ttl));
     return 1;
 }
@@ -98,6 +113,7 @@ int open_socket(struct s_ft_ping * ft) {
 int update_and_print_single_stat(struct s_icmp_stat *stat, struct s_icmp_pkt * const pkt, struct s_ft_ping * ft){
     struct timeval current_time;
     double time_diff;
+    int decimal_digits;
 
     if (gettimeofday(&current_time, NULL)) {
         fprintf(stderr, TIME_ERROR);
@@ -119,7 +135,20 @@ int update_and_print_single_stat(struct s_icmp_stat *stat, struct s_icmp_pkt * c
     printf("icmp_seq=%hhd ", pkt->sequence);
     if (ft->is_verbose)
         printf("ident=%d ", pkt->id);
-    printf("ttl=%d time=%.2f\n", ft->TTL, time_diff);
+    printf("ttl=%d ", ft->TTL);
+    if (time_diff >= 1000)
+        decimal_digits = 3;
+    else if (time_diff < 1000 && time_diff >= 1) {
+        decimal_digits = 1;
+        while (time_diff / pow(10, decimal_digits) > 1) 
+            decimal_digits++;
+    }
+    else {
+        decimal_digits = 0;
+        while (time_diff * pow(10, -decimal_digits) < 0.1)
+            decimal_digits--;
+    }
+    printf("time=%.*f ms\n", 3 - decimal_digits, time_diff);
     return 1;
 }
 
@@ -240,7 +269,7 @@ void print_error_code(char * const raw_pkt, enum error_code error_code, struct s
             break;
         default:
             if (pkt->type == 3)
-                printf( DEST_UNREACHABLE);
+                printf(DEST_UNREACHABLE);
             else if (pkt->type == 11)
                 printf(TTL_EXP);
             else if (pkt->type == 12)
