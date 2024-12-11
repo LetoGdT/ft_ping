@@ -1,6 +1,9 @@
 NAME		:=	ft_ping
 SRCS		:=	srcs/main.c \
-				srcs/checksum.c
+				srcs/checksum.c\
+				srcs/dns.c\
+				srcs/print_message_treatment.c\
+				srcs/inits.c
 
 HDRS		:=	incs/ft_ping.h
 
@@ -8,7 +11,7 @@ OBJS		:=	$(addprefix objs/,$(notdir $(patsubst %.c,%.o,$(SRCS))))
 OBJS_BONUS	:=	$(addprefix objs/,$(notdir $(patsubst %.c,%.o,$(SRCS_BONUS))))
 
 CC			:=	gcc
-CFLAGS		:=	-Iincs -g3
+CFLAGS		:=	-Iincs
 LDFLAGS		:=  -lm
 RM			:=	rm -f
 
