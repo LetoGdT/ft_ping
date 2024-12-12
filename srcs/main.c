@@ -48,8 +48,11 @@ int parse_arguments(int argc, char ** argv, struct s_ft_ping * ft){
                 ft->is_verbose = true;
                 break;
             case ':':
-                fprintf(stderr, ARG_NEEDED);
+                printf(ARG_NEEDED);
+                printf(USAGE);
+                return 0;
             case '?':
+                printf(INVLD_ARG);
             case 'h':
             default:
                 printf(USAGE);
@@ -74,13 +77,13 @@ int read_loop(struct s_ft_ping * ft, struct s_icmp_pkt * pkt, struct s_icmp_stat
     struct timeval current_time;
     double timediff;
 
-    ready_count = 0;
     if (gettimeofday(&current_time, NULL)) {
         fprintf(stderr, TIME_ERROR);
         close(ft->sockfd);
         return 0;
     }
     do {
+        ready_count = 0;
         FD_ZERO(&read_fds);
         FD_SET(ft->sockfd, &read_fds);
         timediff = (current_time.tv_sec - loop_start->tv_sec) * pow(10, 6) + current_time.tv_usec - loop_start->tv_usec;
@@ -121,7 +124,7 @@ int read_loop(struct s_ft_ping * ft, struct s_icmp_pkt * pkt, struct s_icmp_stat
         free(ft->hostname);
         // The data has been received and treated properly
         return 1;
-    } while (timediff > 0);
+    } while (timeout.tv_sec + timeout.tv_nsec > 0);
     return 1;
 }
 
