@@ -113,8 +113,6 @@ int validate_packet(char * const raw_pkt, struct s_icmp_pkt * pkt, struct s_ft_p
         return 0;
     }
     ft->hostname = reverse_dns_lookup(raw_pkt);
-    if (!ft->hostname)
-        return 0;
     return 1;
 }
 
@@ -129,7 +127,7 @@ void print_error_code(char * const raw_pkt, enum error_code error_code, struct s
     if (inet_ntop(AF_INET, raw_pkt + 12, responding_server_hostaddress, INET_ADDRSTRLEN) == NULL) {
         responding_server_hostaddress[0] = '\0';
     }
-    if (!strcmp(ft->hostaddress, ft->hostname))
+    if (!strcmp(ft->hostaddress, ft->canon_name))
         printf("From %s: icmp_seq=%hu ", responding_server_hostaddress, ft->icmp_seq);
     else
         printf("From %s (%s): icmp_seq=%hu ", responding_server_hostname, responding_server_hostaddress, ft->icmp_seq);

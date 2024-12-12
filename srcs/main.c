@@ -112,11 +112,10 @@ int read_loop(struct s_ft_ping * ft, struct s_icmp_pkt * pkt, struct s_icmp_stat
             return 0;
         }
         // Validate and pack icmp header and data into structure
-        if (!validate_packet(pkt_rcv_buff, pkt, ft)) {
-            if (!ft->hostname)
-                return 0;
+        if (!validate_packet(pkt_rcv_buff, pkt, ft)) 
             return 1;
-        }
+        if (!ft->hostname)
+            return 0;
         if(!update_and_print_single_stat(stat, pkt, ft)) {
             free(ft->hostname);
             return 0;
