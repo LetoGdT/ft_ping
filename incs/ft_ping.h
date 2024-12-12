@@ -20,6 +20,7 @@
 # define IP_CHKSUM_ERR "IP header checksum was wrong"
 # define ICMP_CHKSUM_ERR "ICMP header checksum was wrong"
 # define ARG_NEEDED "%s: option requires an argument -- '%c'\n", argv[0], optopt
+# define INVLD_ARG "%s: invalid option -- '%c'\n", argv[0], optopt
 # define MISSING_DEST "%s: usage error: Destination address required\n", argv[0]
 # define USAGE "Usage\n\
   ft_ping [options] <destination>\n\

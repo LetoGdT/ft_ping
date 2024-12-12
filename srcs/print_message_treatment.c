@@ -27,12 +27,12 @@ int update_and_print_single_stat(struct s_icmp_stat *stat, struct s_icmp_pkt * c
         stat->max = time_diff;
     if (stat->min > time_diff)
         stat->min = time_diff;
-    printf("%ld bytes from %s", sizeof(struct s_icmp_pkt), ft->hostname);
+    printf("%ld bytes from ", sizeof(struct s_icmp_pkt));
     if (strcmp(ft->hostaddress, ft->canon_name))
-        printf(" (%s): ",ft->hostaddress);
+        printf("%s (%s)", ft->hostname, ft->hostaddress);
     else
-        printf(": ");
-    printf("icmp_seq=%hhd ", pkt->sequence);
+        printf("%s", ft->hostaddress);
+    printf(": icmp_seq=%hhd ", pkt->sequence);
     if (ft->is_verbose)
         printf("ident=%d ", pkt->id);
     printf("ttl=%d ", ft->TTL);
@@ -62,7 +62,7 @@ void print_stat(struct s_icmp_stat * stat, struct s_ft_ping const * ft) {
         fprintf(stderr, TIME_ERROR);
         return ;
     }
-    time_diff = (ft->end_time.tv_sec - ft->start_time.tv_sec) * 1000 + ((double)ft->end_time.tv_usec - ft->start_time.tv_usec)/1000;
+    time_diff = (ft->end_time.tv_sec - ft->start_time.tv_sec) * 1000 + ((double)ft->end_time.tv_usec - ft->start_time.tv_usec) / 1000;
     if (time_diff < 0)
         time_diff = 0;
     stat->average = stat->sum / stat->number_of_elements;
