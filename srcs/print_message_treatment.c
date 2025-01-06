@@ -32,7 +32,7 @@ int update_and_print_single_stat(struct s_icmp_stat *stat, struct s_icmp_pkt * c
         printf("%s (%s)", ft->hostname, ft->hostaddress);
     else
         printf("%s", ft->hostaddress);
-    printf(": icmp_seq=%hhd ", pkt->sequence);
+    printf(": icmp_seq=%hhu ", pkt->sequence);
     if (ft->is_verbose)
         printf("ident=%d ", pkt->id);
     printf("ttl=%d ", ft->TTL);
