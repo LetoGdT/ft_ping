@@ -83,7 +83,7 @@ void print_initial_message(struct s_ft_ping * ft) {
         printf("%s: sock4.fd: %d (socktype: SOCK_RAW), hints.ai_family: AF_INET\n\n", ft->prog_name, ft->sockfd);
         printf("ai->ai->family: AF_INET, ai->ai_canonname: '%s'\n", ft->canon_name);
     }
-    printf("FT_PING %s (%s) %ld bytes of data. \n", ft->canon_name, ft->hostaddress, sizeof(struct s_icmp_pkt));
+    printf("FT_PING %s (%s) %ld bytes of data. \n", ft->canon_name, ft->hostaddress, DATA_WIDTH);
 }
 
 int validate_packet(char * const raw_pkt, struct s_icmp_pkt * pkt, struct s_ft_ping * ft) {
@@ -104,15 +104,15 @@ int validate_packet(char * const raw_pkt, struct s_icmp_pkt * pkt, struct s_ft_p
         error_code = ip_chksum;
     else if (old_checksum != pkt->checksum) 
         error_code = icmp_chksum;
-    else if (pkt->type != 0 || pkt->code != 0) 
-        error_code = not_echo;
-    else if (pkt->id != getpid())
-        return 1;
+    else if (pkt->type != 0 || pkt->code != 0 || pkt->id != getpid() || pkt->sequence != ft->icmp_seq) 
+        return 0;
     if (error_code) {
         print_error_code(raw_pkt, error_code, pkt, ft);
-        return 0;
+        return -1;
     }
     ft->hostname = reverse_dns_lookup(raw_pkt);
+    if (!ft->hostname)
+        return -1;
     return 1;
 }
 

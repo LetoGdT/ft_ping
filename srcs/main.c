@@ -13,6 +13,7 @@
 #include <byteswap.h>
 #include <netdb.h>
 #include "ft_ping.h"
+#include <limits.h>
 
 volatile sig_atomic_t sigint_occured;
 
@@ -38,11 +39,26 @@ int parse_arguments(int argc, char ** argv, struct s_ft_ping * ft){
                 break;
             case 'p':
                 ft->use_pattern = true;
-                optarg[2] = '\0';
-                ft->pattern = (unsigned char)strtol(optarg, NULL, 16);
+                for (int i = 0 ; optarg[i] ; i++) 
+                    if (!((optarg[i] >= 'a' && optarg[i] <= 'f')
+                    || (optarg[i] >= 'A' && optarg[i] <= 'F')
+                    || (optarg[i] >= '0' && optarg[i] <= '9'))){
+                        fprintf(stderr, INVLD_PATTERN);
+                        return 0;
+                    }
+                long int pattern = strtol(optarg, NULL, 16);
+                if (pattern < 0 || pattern > 255 ) {
+                    fprintf(stderr, INVLD_PATTERN);
+                    return 0;
+                }
+                ft->pattern = (unsigned char)pattern;
                 break;
             case 't':
                 ft->TTL_to_send = atoi(optarg);
+                if (ft->TTL_to_send < 0 || ft->TTL_to_send > 255) {
+                    fprintf(stderr, INVLD_TTL);
+                    return 0;
+                }
                 break;
             case 'v':
                 ft->is_verbose = true;
@@ -76,6 +92,7 @@ int read_loop(struct s_ft_ping * ft, struct s_icmp_pkt * pkt, struct s_icmp_stat
     fd_set read_fds;
     struct timeval current_time;
     double timediff;
+    int is_valid;
 
     if (gettimeofday(&current_time, NULL)) {
         fprintf(stderr, TIME_ERROR);
@@ -112,9 +129,10 @@ int read_loop(struct s_ft_ping * ft, struct s_icmp_pkt * pkt, struct s_icmp_stat
             return 0;
         }
         // Validate and pack icmp header and data into structure
-        if (!validate_packet(pkt_rcv_buff, pkt, ft)) 
-            return 1;
-        if (!ft->hostname)
+        is_valid = validate_packet(pkt_rcv_buff, pkt, ft);
+        if (is_valid == 0)
+            continue;
+        else if (is_valid == -1)
             return 0;
         if(!update_and_print_single_stat(stat, pkt, ft)) {
             free(ft->hostname);
@@ -132,7 +150,6 @@ int ping_single_loop(struct s_ft_ping * ft, struct s_icmp_pkt * pkt, struct s_ic
     struct timeval loop_end;
     long int timediff;
 
-    ft->icmp_seq++;
     if (!fill_icmp_pkt(pkt, ft)) {
         close(ft->sockfd);
         return 0;
@@ -164,6 +181,7 @@ int ping_single_loop(struct s_ft_ping * ft, struct s_icmp_pkt * pkt, struct s_ic
         sleep(timediff / (int)pow(10, 6));
         usleep(timediff % (int)pow(10, 6));
     }
+    ft->icmp_seq++;
     return 1;
 } 
 

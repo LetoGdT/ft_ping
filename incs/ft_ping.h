@@ -6,7 +6,7 @@
 # define RECVD_PKT_MAX_SIZE 60 + 20 + 2 * sizeof(struct s_icmp_pkt)
 // Cycle time in ms
 # define CYCLE_TIME 1000
-# define DATA_WIDTH 16
+# define DATA_WIDTH 40
 # define DFLT_DATA "pouet"
 # define TIME_ERROR "Error when retrieving the time\n"
 # define SEND_ERROR "%s: Cannot send packets over socket: %s\n"
@@ -21,6 +21,8 @@
 # define ICMP_CHKSUM_ERR "ICMP header checksum was wrong"
 # define ARG_NEEDED "%s: option requires an argument -- '%c'\n", argv[0], optopt
 # define INVLD_ARG "%s: invalid option -- '%c'\n", argv[0], optopt
+# define INVLD_TTL "%s: invalid argument: '%s': out of range: 0 <= value <= 255\n", argv[0], optarg
+# define INVLD_PATTERN "%s: patterns must be specified as hex digits: %s\n", argv[0], optarg
 # define MISSING_DEST "%s: usage error: Destination address required\n", argv[0]
 # define USAGE "Usage\n\
   ft_ping [options] <destination>\n\

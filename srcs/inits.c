@@ -64,6 +64,8 @@ int initialize_ping(struct s_ft_ping * ft, char * prog_name) {
 }
 
 int open_socket(struct s_ft_ping * ft) {
+    int optval = 1;
+
     // open socket with datagram protocol
     ft->sockfd = socket(AF_INET, SOCK_RAW, IPPROTO_ICMP);
     if (ft->sockfd == -1) {
@@ -73,5 +75,6 @@ int open_socket(struct s_ft_ping * ft) {
     if (ft->TTL_to_send != -1) {
         setsockopt(ft->sockfd, IPPROTO_IP, IP_TTL, &ft->TTL_to_send, sizeof(ft->TTL_to_send));
     }
+    setsockopt(ft->sockfd, SOL_SOCKET, SO_BROADCAST, &optval, sizeof(optval));
     return 1;
 }
