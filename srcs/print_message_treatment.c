@@ -100,16 +100,22 @@ int validate_packet(char * const raw_pkt, struct s_icmp_pkt * pkt, struct s_ft_p
     // Compute checksum over the whole data, with the length retrieved from the ip header
     compute_icmp_checksum((unsigned char *)raw_pkt + (raw_pkt[0]&0xf) * 4, bswap_16(((uint16_t*)(raw_pkt))[1]) - (raw_pkt[0]&0xf) * 4);
     // Verify IP header checksum
+    printf("tamère\n");
     if (!verify_ip_checksum(raw_pkt))
         error_code = ip_chksum;
     else if (old_checksum != pkt->checksum) 
         error_code = icmp_chksum;
-    else if (pkt->type != 0 || pkt->code != 0 || pkt->id != getpid() || pkt->sequence != ft->icmp_seq) 
+    else if (pkt->type != 0 || pkt->code != 0 || pkt->id != getpid() || pkt->sequence != ft->icmp_seq) {
+        printf("nique\n");
         return 0;
+    }
+    printf("prout\n");
     if (error_code) {
+        printf("allo\n");
         print_error_code(raw_pkt, error_code, pkt, ft);
         return -1;
     }
+    printf("oui\n");
     ft->hostname = reverse_dns_lookup(raw_pkt);
     if (!ft->hostname)
         return -1;
@@ -121,6 +127,7 @@ void print_error_code(char * const raw_pkt, enum error_code error_code, struct s
     char responding_server_hostaddress[INET_ADDRSTRLEN];
 
     responding_server_hostname = reverse_dns_lookup(raw_pkt);
+    printf("allo\n");
     if (responding_server_hostname == NULL) {
         responding_server_hostname = strdup("");
     }
