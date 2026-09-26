@@ -1,0 +1,6 @@
+Un projet qui fonctionne dans l'ensemble, seulement quelques cas de bords qui seront normqlement regles 
+rapidement ! 
+- quand on ping localhost, on n'ignore pas le packet comme il faut. 
+- "-v" qui ne se comporte pas comme le ping 2.0 (tester avec 10.0.2.14)
+le ttl <= 0 ou > 255 
+p
