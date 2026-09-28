@@ -100,44 +100,39 @@ int validate_packet(char * const raw_pkt, struct s_icmp_pkt * pkt, struct s_ft_p
     // Compute checksum over the whole data, with the length retrieved from the ip header
     compute_icmp_checksum((unsigned char *)raw_pkt + (raw_pkt[0]&0xf) * 4, bswap_16(((uint16_t*)(raw_pkt))[1]) - (raw_pkt[0]&0xf) * 4);
     // Verify IP header checksum
-    printf("tamère\n");
     if (!verify_ip_checksum(raw_pkt))
         error_code = ip_chksum;
-    else if (old_checksum != pkt->checksum) 
+    else if (old_checksum != pkt->checksum)
         error_code = icmp_chksum;
-    else if (pkt->type != 0 || pkt->code != 0 || pkt->id != getpid() || pkt->sequence != ft->icmp_seq) {
-        printf("nique\n");
+    else if (pkt->type != 0 || pkt->code != 0 || pkt->id != getpid() || pkt->sequence != ft->icmp_seq)
+        error_code = not_echo;
+    if (error_code) {
+        print_error_code(raw_pkt, error_code, pkt, ft);
         return 0;
     }
-    printf("prout\n");
-    if (error_code) {
-        printf("allo\n");
-        print_error_code(raw_pkt, error_code, pkt, ft);
-        return -1;
-    }
-    printf("oui\n");
     ft->hostname = reverse_dns_lookup(raw_pkt);
     if (!ft->hostname)
-        return -1;
+        ft->hostname = strdup("pouet");
     return 1;
 }
 
 void print_error_code(char * const raw_pkt, enum error_code error_code, struct s_icmp_pkt * const pkt, struct s_ft_ping * const ft) {
     char * responding_server_hostname;
     char responding_server_hostaddress[INET_ADDRSTRLEN];
+    uint16_t icmp_pkt_size;
 
+    icmp_pkt_size = bswap_16(((uint16_t*)raw_pkt)[1]) - (raw_pkt[0]&0xf) * 4;
     responding_server_hostname = reverse_dns_lookup(raw_pkt);
-    printf("allo\n");
     if (responding_server_hostname == NULL) {
         responding_server_hostname = strdup("");
     }
     if (inet_ntop(AF_INET, raw_pkt + 12, responding_server_hostaddress, INET_ADDRSTRLEN) == NULL) {
         responding_server_hostaddress[0] = '\0';
     }
-    if (!strcmp(ft->hostaddress, ft->canon_name))
-        printf("From %s: icmp_seq=%hu ", responding_server_hostaddress, ft->icmp_seq);
-    else
-        printf("From %s (%s): icmp_seq=%hu ", responding_server_hostname, responding_server_hostaddress, ft->icmp_seq);
+ //   if (!strcmp(ft->hostaddress, ft->canon_name))
+ //       printf("From %s: icmp_seq=%hu ", responding_server_hostaddress, ft->icmp_seq);
+ //   else
+        printf("%ld bytes from %s (%s): ", icmp_pkt_size, responding_server_hostname, responding_server_hostaddress, ft->icmp_seq);
     switch(error_code) {
         case ip_chksum:
             printf(IP_CHKSUM_ERR);
