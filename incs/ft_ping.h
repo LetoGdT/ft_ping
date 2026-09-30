@@ -11,7 +11,7 @@
 # define TIME_ERROR "Error when retrieving the time\n"
 # define SEND_ERROR "%s: Cannot send packets over socket: %s\n"
 # define PRINT_STRERROR "%s: %s\n", ft->prog_name, strerror(errno)
-# define DEST_UNREACHABLE "The destination host or network is unreachable\n"
+# define DEST_UNREACHABLE "Destination Host Unreachable\n"
 # define TTL_EXP "Time to live exceeded\n"
 # define HDR_ERR "A problem occured in the header of the packet\n"
 # define DFLT_ERR "An error occured\n"
@@ -24,6 +24,9 @@
 # define INVLD_TTL "%s: invalid argument: '%s': out of range: 0 <= value <= 255\n", argv[0], optarg
 # define INVLD_PATTERN "%s: patterns must be specified as hex digits: %s\n", argv[0], optarg
 # define MISSING_DEST "%s: usage error: Destination address required\n", argv[0]
+# define HDR_MSSG "IP Hdr Dump:\n"
+# define HDR_CONT "VR HL TOS  Len   ID Flg   off TTL Pro  cks      Src      Dst     Data\n"
+# define ICMP_HDR "ICMP: type %hhu, code %hhu, size %ld, id 0x%.4x, seq 0x%.4x\n"
 # define USAGE "Usage\n\
   ft_ping [options] <destination>\n\
 \n\
@@ -96,7 +99,7 @@ void  sigkint_handler(int sig);
 void  initialize_stat(struct s_icmp_stat * stat);
 int   initialize_ping(struct s_ft_ping * ft, char * prog_name);
 int   open_socket(struct s_ft_ping * ft);
-int   update_and_print_single_stat(struct s_icmp_stat *stat, struct s_icmp_pkt * const pkt, struct s_ft_ping * ft);
+int   update_and_print_single_stat(struct s_icmp_stat *stat, char * const raw_pkt, struct s_icmp_pkt * const pkt, struct s_ft_ping * ft);
 void  print_stat(struct s_icmp_stat * stat, struct s_ft_ping const * ft);
 int   dns_lookup(struct s_ft_ping *ft);
 char* reverse_dns_lookup(char * const raw_pkt);

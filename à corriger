@@ -1,3 +1,0 @@
-- quand on ping localhost, on n'ignore pas le packet comme il faut. 
-- "-v" qui ne se comporte pas comme le ping 2.0 (tester avec 10.0.2.14)
-- taille des données

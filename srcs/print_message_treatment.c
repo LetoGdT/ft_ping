@@ -10,11 +10,13 @@
 #include <errno.h>
 #include "ft_ping.h"
 
-int update_and_print_single_stat(struct s_icmp_stat *stat, struct s_icmp_pkt * const pkt, struct s_ft_ping * ft) {
+int update_and_print_single_stat(struct s_icmp_stat *stat, char * const raw_pkt, struct s_icmp_pkt * const pkt, struct s_ft_ping * ft) {
     struct timeval current_time;
     double time_diff;
     int decimal_digits;
+    uint16_t icmp_pkt_size;
 
+    icmp_pkt_size = bswap_16(((uint16_t*)raw_pkt)[1]) - (raw_pkt[0]&0xf) * 4;
     if (gettimeofday(&current_time, NULL)) {
         fprintf(stderr, TIME_ERROR);
         return 0;
@@ -27,8 +29,8 @@ int update_and_print_single_stat(struct s_icmp_stat *stat, struct s_icmp_pkt * c
         stat->max = time_diff;
     if (stat->min > time_diff)
         stat->min = time_diff;
-    printf("%ld bytes from ", sizeof(struct s_icmp_pkt));
-    if (strcmp(ft->hostaddress, ft->canon_name))
+    printf("%hu bytes from ", icmp_pkt_size);
+    if (strcmp(ft->hostaddress, ft->hostname))
         printf("%s (%s)", ft->hostname, ft->hostaddress);
     else
         printf("%s", ft->hostaddress);
@@ -83,7 +85,7 @@ void print_initial_message(struct s_ft_ping * ft) {
         printf("%s: sock4.fd: %d (socktype: SOCK_RAW), hints.ai_family: AF_INET\n\n", ft->prog_name, ft->sockfd);
         printf("ai->ai->family: AF_INET, ai->ai_canonname: '%s'\n", ft->canon_name);
     }
-    printf("FT_PING %s (%s) %ld bytes of data. \n", ft->canon_name, ft->hostaddress, DATA_WIDTH);
+    printf("FT_PING %s (%s) %ld bytes of data. \n", ft->canon_name, ft->hostaddress, sizeof(struct s_icmp_pkt) - 8);
 }
 
 int validate_packet(char * const raw_pkt, struct s_icmp_pkt * pkt, struct s_ft_ping * ft) {
@@ -112,7 +114,7 @@ int validate_packet(char * const raw_pkt, struct s_icmp_pkt * pkt, struct s_ft_p
     }
     ft->hostname = reverse_dns_lookup(raw_pkt);
     if (!ft->hostname)
-        ft->hostname = strdup("pouet");
+        ft->hostname = strdup(ft->hostaddress);
     return 1;
 }
 
@@ -120,6 +122,11 @@ void print_error_code(char * const raw_pkt, enum error_code error_code, struct s
     char * responding_server_hostname;
     char responding_server_hostaddress[INET_ADDRSTRLEN];
     uint16_t icmp_pkt_size;
+    uint16_t *sent_pkt;
+    char src_ip[INET_ADDRSTRLEN];
+    char dest_ip[INET_ADDRSTRLEN];
+    struct s_icmp_pkt * sent_icmp_pkt;
+    int i;
 
     icmp_pkt_size = bswap_16(((uint16_t*)raw_pkt)[1]) - (raw_pkt[0]&0xf) * 4;
     responding_server_hostname = reverse_dns_lookup(raw_pkt);
@@ -150,6 +157,33 @@ void print_error_code(char * const raw_pkt, enum error_code error_code, struct s
             else
                 printf(DFLT_ERR);
             break;
+    }
+    if (ft->is_verbose) {
+        sent_pkt = (uint16_t*)(raw_pkt + (raw_pkt[0]&0xF) * 4 + 8);
+        sent_icmp_pkt = (struct s_icmp_pkt*)(sent_pkt + (sent_pkt[0]&0xF) * 2);
+        inet_ntop(AF_INET, sent_pkt + 6, src_ip, sizeof(src_ip));
+        inet_ntop(AF_INET, sent_pkt + 8, dest_ip, sizeof(dest_ip));
+        printf("%s", HDR_MSSG);
+        for (i = 0 ; i < 10 ; i++) {
+            sent_pkt[i] = bswap_16(sent_pkt[i]);
+            printf(" %.4x", sent_pkt[i]);
+        }
+        printf("\n");
+        printf("%s", HDR_CONT);
+        printf(" %hhu  %hhu  %.2hx %.4x %.4x   %.1x  %.4x  %.2hx  %.2x %.4x %s  %s\n", 
+                (sent_pkt[0]&0xF000)>>12,
+                (sent_pkt[0]&0x0F00)>>8,
+                sent_pkt[0]&0xff,
+                sent_pkt[1],
+                sent_pkt[2],
+                (sent_pkt[3]&0xE000)>>13,
+                sent_pkt[3]&0x1FFF,
+                (sent_pkt[4]&0xFF00)>>8,
+                sent_pkt[4]&0xFF,
+                sent_pkt[5],
+                src_ip,
+                dest_ip);
+        printf(ICMP_HDR, sent_icmp_pkt->type, sent_icmp_pkt->code, sizeof(struct s_icmp_pkt), sent_icmp_pkt->id, sent_icmp_pkt->sequence);
     }
     free(responding_server_hostname);
 }
