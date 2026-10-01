@@ -29,6 +29,9 @@ int update_and_print_single_stat(struct s_icmp_stat *stat, char * const raw_pkt,
         stat->max = time_diff;
     if (stat->min > time_diff)
         stat->min = time_diff;
+    ft->hostname = reverse_dns_lookup(raw_pkt);
+    if (!ft->hostname)
+        ft->hostname = strdup(ft->hostaddress);
     printf("%hu bytes from ", icmp_pkt_size);
     if (strcmp(ft->hostaddress, ft->hostname))
         printf("%s (%s)", ft->hostname, ft->hostaddress);
@@ -81,11 +84,11 @@ void print_stat(struct s_icmp_stat * stat, struct s_ft_ping const * ft) {
 }
 
 void print_initial_message(struct s_ft_ping * ft) {
-    if (ft->is_verbose){
-        printf("%s: sock4.fd: %d (socktype: SOCK_RAW), hints.ai_family: AF_INET\n\n", ft->prog_name, ft->sockfd);
-        printf("ai->ai->family: AF_INET, ai->ai_canonname: '%s'\n", ft->canon_name);
-    }
-    printf("FT_PING %s (%s) %ld bytes of data. \n", ft->canon_name, ft->hostaddress, sizeof(struct s_icmp_pkt) - 8);
+    printf("FT_PING %s (%s) %ld bytes of data", ft->canon_name, ft->hostaddress, sizeof(struct s_icmp_pkt) - 8);
+    if (ft->is_verbose)
+        printf(": id 0x%.4x = %d\n", bswap_16(getpid()), bswap_16(getpid()));
+    else
+        printf(". \n");
 }
 
 int validate_packet(char * const raw_pkt, struct s_icmp_pkt * pkt, struct s_ft_ping * ft) {
@@ -112,9 +115,6 @@ int validate_packet(char * const raw_pkt, struct s_icmp_pkt * pkt, struct s_ft_p
         print_error_code(raw_pkt, error_code, pkt, ft);
         return 0;
     }
-    ft->hostname = reverse_dns_lookup(raw_pkt);
-    if (!ft->hostname)
-        ft->hostname = strdup(ft->hostaddress);
     return 1;
 }
 
@@ -136,10 +136,7 @@ void print_error_code(char * const raw_pkt, enum error_code error_code, struct s
     if (inet_ntop(AF_INET, raw_pkt + 12, responding_server_hostaddress, INET_ADDRSTRLEN) == NULL) {
         responding_server_hostaddress[0] = '\0';
     }
- //   if (!strcmp(ft->hostaddress, ft->canon_name))
- //       printf("From %s: icmp_seq=%hu ", responding_server_hostaddress, ft->icmp_seq);
- //   else
-        printf("%ld bytes from %s (%s): ", icmp_pkt_size, responding_server_hostname, responding_server_hostaddress, ft->icmp_seq);
+    printf("%ld bytes from %s (%s): ", icmp_pkt_size, responding_server_hostname, responding_server_hostaddress, ft->icmp_seq);
     switch(error_code) {
         case ip_chksum:
             printf(IP_CHKSUM_ERR);
@@ -159,6 +156,7 @@ void print_error_code(char * const raw_pkt, enum error_code error_code, struct s
             break;
     }
     if (ft->is_verbose) {
+        //print IP header and ICMP header
         sent_pkt = (uint16_t*)(raw_pkt + (raw_pkt[0]&0xF) * 4 + 8);
         sent_icmp_pkt = (struct s_icmp_pkt*)(sent_pkt + (sent_pkt[0]&0xF) * 2);
         inet_ntop(AF_INET, sent_pkt + 6, src_ip, sizeof(src_ip));

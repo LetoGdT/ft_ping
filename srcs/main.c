@@ -99,14 +99,14 @@ int read_loop(struct s_ft_ping * ft, struct s_icmp_pkt * pkt, struct s_icmp_stat
         close(ft->sockfd);
         return 0;
     }
+    timediff = (current_time.tv_sec - loop_start->tv_sec) * pow(10, 6) + current_time.tv_usec - loop_start->tv_usec;
+    timeout.tv_nsec = ft->cycle_time * pow(10, 6) - timediff * pow(10, 3);
+    timeout.tv_sec = timeout.tv_nsec / (int)pow(10, 9);
+    timeout.tv_nsec %= (int)pow(10, 9);
     do {
         ready_count = 0;
         FD_ZERO(&read_fds);
         FD_SET(ft->sockfd, &read_fds);
-        timediff = (current_time.tv_sec - loop_start->tv_sec) * pow(10, 6) + current_time.tv_usec - loop_start->tv_usec;
-        timeout.tv_nsec = ft->cycle_time * pow(10, 6) - timediff * pow(10, 3);
-        timeout.tv_sec = timeout.tv_nsec / (int)pow(10, 9);
-        timeout.tv_nsec %= (int)pow(10, 9);
         // Wait for data to arrive on the socket
         ready_count = pselect(ft->sockfd + 1, &read_fds, NULL, NULL, &timeout, NULL);
         if (ready_count < 0) {
