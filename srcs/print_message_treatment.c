@@ -136,7 +136,7 @@ void print_error_code(char * const raw_pkt, enum error_code error_code, struct s
     if (inet_ntop(AF_INET, raw_pkt + 12, responding_server_hostaddress, INET_ADDRSTRLEN) == NULL) {
         responding_server_hostaddress[0] = '\0';
     }
-    printf("%ld bytes from %s (%s): ", icmp_pkt_size, responding_server_hostname, responding_server_hostaddress, ft->icmp_seq);
+    printf("%d bytes from %s (%s): ", icmp_pkt_size, responding_server_hostname, responding_server_hostaddress);
     switch(error_code) {
         case ip_chksum:
             printf(IP_CHKSUM_ERR);
