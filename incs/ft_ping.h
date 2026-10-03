@@ -74,7 +74,6 @@ struct s_ft_ping {
     char *          prog_name;
     bool            is_verbose;
     char *          canon_name;
-    char *          hostname;
     char            hostaddress[INET_ADDRSTRLEN];
     int             sockfd;
     struct sockaddr serv_addr;

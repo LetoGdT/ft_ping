@@ -134,11 +134,8 @@ int read_loop(struct s_ft_ping * ft, struct s_icmp_pkt * pkt, struct s_icmp_stat
             continue;
         else if (is_valid == -1)
             return 0;
-        if(!update_and_print_single_stat(stat, pkt_rcv_buff, pkt, ft)) {
-            free(ft->hostname);
+        if(!update_and_print_single_stat(stat, pkt_rcv_buff, pkt, ft))
             return 0;
-        }
-        free(ft->hostname);
         // The data has been received and treated properly
         return 1;
     } while (timeout.tv_sec + timeout.tv_nsec > 0);

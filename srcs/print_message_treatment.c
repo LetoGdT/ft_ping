@@ -29,15 +29,7 @@ int update_and_print_single_stat(struct s_icmp_stat *stat, char * const raw_pkt,
         stat->max = time_diff;
     if (stat->min > time_diff)
         stat->min = time_diff;
-    ft->hostname = reverse_dns_lookup(raw_pkt);
-    if (!ft->hostname)
-        ft->hostname = strdup(ft->hostaddress);
-    printf("%hu bytes from ", icmp_pkt_size);
-    if (strcmp(ft->hostaddress, ft->hostname))
-        printf("%s (%s)", ft->hostname, ft->hostaddress);
-    else
-        printf("%s", ft->hostaddress);
-    printf(": icmp_seq=%hhu ", pkt->sequence);
+    printf("%hu bytes from %s: icmp_seq=%hhu ", icmp_pkt_size, ft->hostaddress, pkt->sequence);
     if (ft->is_verbose)
         printf("ident=%d ", pkt->id);
     printf("ttl=%d ", ft->TTL);
@@ -72,23 +64,20 @@ void print_stat(struct s_icmp_stat * stat, struct s_ft_ping const * ft) {
         time_diff = 0;
     stat->average = stat->sum / stat->number_of_elements;
     stat->mdev = sqrt(stat->sum_of_squared / stat->number_of_elements - pow(stat->average, 2));
-    printf("\n--- %s ping statistics ---\n", ft->canon_name);
+    printf("--- %s ping statistics ---\n", ft->canon_name);
     printf("%d pactkets transmitted, %d received, ", ft->icmp_seq, stat->number_of_elements);
     if (ft->error_count != 0)
         printf("+%u errors, ", ft->error_count);
     printf("%.0lf%% packet loss, time %.0fms\n", 100 - ((double)stat->number_of_elements/ft->icmp_seq) * 100, time_diff);
     if (stat->number_of_elements != 0)
-        printf("rtt min/avg/max/mdev = %.3f/%.3f/%.3f/%.3f\n", stat->min, stat->average, stat->max, stat->mdev);
-    else
-        printf("\n");
+        printf("round trip min/avg/max/mdev = %.3f/%.3f/%.3f/%.3f\n", stat->min, stat->average, stat->max, stat->mdev);
 }
 
 void print_initial_message(struct s_ft_ping * ft) {
-    printf("FT_PING %s (%s) %ld bytes of data", ft->canon_name, ft->hostaddress, sizeof(struct s_icmp_pkt) - 8);
+    printf("FT_PING %s (%s) %ld data bytes", ft->canon_name, ft->hostaddress, sizeof(struct s_icmp_pkt) - 8);
     if (ft->is_verbose)
-        printf(": id 0x%.4x = %d\n", bswap_16(getpid()), bswap_16(getpid()));
-    else
-        printf(". \n");
+        printf(": id 0x%.4x = %d", bswap_16(getpid()), bswap_16(getpid()));
+    printf("\n");
 }
 
 int validate_packet(char * const raw_pkt, struct s_icmp_pkt * pkt, struct s_ft_ping * ft) {
@@ -109,6 +98,8 @@ int validate_packet(char * const raw_pkt, struct s_icmp_pkt * pkt, struct s_ft_p
         error_code = ip_chksum;
     else if (old_checksum != pkt->checksum)
         error_code = icmp_chksum;
+    else if (pkt->type == 8 && pkt->code == 0)
+        return 0;
     else if (pkt->type != 0 || pkt->code != 0 || pkt->id != getpid() || pkt->sequence != ft->icmp_seq)
         error_code = not_echo;
     if (error_code) {
